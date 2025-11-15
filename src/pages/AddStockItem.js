@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Container, Form, Button, Row, Col, Card, Alert, Modal, Table, Spinner } from 'react-bootstrap';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,18 +34,18 @@ const AddStockItem = () => {
   const [categorySuccess, setCategorySuccess] = useState('');
   const navigate = useNavigate();
 
-  const fetchCategories = () => {
+  const fetchCategories = useCallback(() => {
     if (!activeShopId) return;
     setCategoriesLoading(true);
     getInventoryCategories(activeShopId)
       .then(setCategories)
       .catch(err => console.error('Failed to load categories', err))
       .finally(() => setCategoriesLoading(false));
-  };
+  }, [activeShopId]);
 
   useEffect(() => {
     fetchCategories();
-  }, [activeShopId]);
+  }, [fetchCategories]);
 
   // Category management handlers
   const handleAddCategory = async (e) => {

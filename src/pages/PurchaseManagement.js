@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { Container, Card, Row, Col, Form, Button, Alert, Table, Badge, Spinner, Modal } from 'react-bootstrap';
 import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
@@ -80,18 +80,18 @@ const PurchaseManagement = () => {
       .finally(() => setStockLoading(false));
   }, [currentUser]);
 
-  const fetchCategories = () => {
+  const fetchCategories = useCallback(() => {
     if (!currentUser?.uid) return;
     setCategoriesLoading(true);
     getInventoryCategories(currentUser.uid)
       .then(setCategories)
       .catch(err => console.error('Failed to load categories', err))
       .finally(() => setCategoriesLoading(false));
-  };
+  }, [currentUser]);
 
   useEffect(() => {
     fetchCategories();
-  }, [currentUser]);
+  }, [fetchCategories]);
 
   const setRowValue = (index, key, value) => {
     setRows(prev => {
