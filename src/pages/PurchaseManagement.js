@@ -1,12 +1,24 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Container, Card, Row, Col, Form, Button, Alert, Table, Badge, Spinner } from 'react-bootstrap';
+import { Container, Card, Row, Col, Form, Button, Alert, Table, Badge, Spinner, Modal } from 'react-bootstrap';
 import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { createPurchaseOrder, getPurchaseOrders } from '../utils/purchaseUtils';
 import { formatDisplayDate } from '../utils/dateUtils';
+import { getShopStock } from '../utils/stockUtils';
+import { getInventoryCategories, addInventoryCategory, updateInventoryCategory, deleteInventoryCategory } from '../utils/categoryUtils';
 
-const defaultRow = { name: '', category: '', description: '', quantity: '', unit: 'units', costPrice: '', sellingPrice: '', expiryDate: '' };
+const defaultRow = {
+  sourceItemId: '',
+  name: '',
+  category: '',
+  description: '',
+  quantity: '',
+  unit: 'units',
+  costPrice: '',
+  sellingPrice: '',
+  expiryDate: ''
+};
 const createEmptyRow = () => ({ ...defaultRow });
 
 const formatCurrency = (value) => {
@@ -33,6 +45,18 @@ const PurchaseManagement = () => {
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [stockItems, setStockItems] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [newCategory, setNewCategory] = useState({ name: '', description: '' });
+  const [editCategory, setEditCategory] = useState({ id: '', name: '', description: '' });
+  const [showEditCategoryModal, setShowEditCategoryModal] = useState(false);
+  const [showDeleteCategoryModal, setShowDeleteCategoryModal] = useState(false);
+  const [categoryToDelete, setCategoryToDelete] = useState(null);
+  const [categoryError, setCategoryError] = useState('');
+  const [categorySuccess, setCategorySuccess] = useState('');
 
   const totalCost = useMemo(() => {
     return rows.reduce((sum, row) => sum + calculateRowTotal(row), 0);
@@ -47,6 +71,28 @@ const PurchaseManagement = () => {
       .finally(() => setHistoryLoading(false));
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+    setStockLoading(true);
+    getShopStock(currentUser.uid)
+      .then(setStockItems)
+      .catch(err => console.error('Failed to load stock items', err))
+      .finally(() => setStockLoading(false));
+  }, [currentUser]);
+
+  const fetchCategories = () => {
+    if (!currentUser?.uid) return;
+    setCategoriesLoading(true);
+    getInventoryCategories(currentUser.uid)
+      .then(setCategories)
+      .catch(err => console.error('Failed to load categories', err))
+      .finally(() => setCategoriesLoading(false));
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, [currentUser]);
+
   const setRowValue = (index, key, value) => {
     setRows(prev => {
       const next = [...prev];
@@ -58,6 +104,116 @@ const PurchaseManagement = () => {
   const addRow = () => setRows(prev => [...prev, createEmptyRow()]);
   const removeRow = (index) => setRows(prev => prev.filter((_, idx) => idx !== index));
 
+  // Category management handlers
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!currentUser?.uid || !newCategory.name.trim()) {
+      setCategoryError('Category name is required');
+      return;
+    }
+    setCategoryError('');
+    setCategoriesLoading(true);
+    try {
+      const categoryData = {
+        name: newCategory.name.trim(),
+        description: newCategory.description.trim(),
+        shopId: currentUser.uid
+      };
+      await addInventoryCategory(categoryData);
+      setCategorySuccess('Category added successfully');
+      setNewCategory({ name: '', description: '' });
+      fetchCategories();
+      setTimeout(() => setCategorySuccess(''), 3000);
+    } catch (err) {
+      setCategoryError(err.message || 'Failed to add category');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  const handleEditCategory = (category) => {
+    setEditCategory({ id: category.id, name: category.name, description: category.description || '' });
+    setShowEditCategoryModal(true);
+  };
+
+  const handleUpdateCategory = async (e) => {
+    e.preventDefault();
+    if (!editCategory.id || !editCategory.name.trim()) {
+      setCategoryError('Category name is required');
+      return;
+    }
+    setCategoryError('');
+    setCategoriesLoading(true);
+    try {
+      await updateInventoryCategory(editCategory.id, {
+        name: editCategory.name.trim(),
+        description: editCategory.description.trim()
+      });
+      setCategorySuccess('Category updated successfully');
+      setShowEditCategoryModal(false);
+      setEditCategory({ id: '', name: '', description: '' });
+      fetchCategories();
+      setTimeout(() => setCategorySuccess(''), 3000);
+    } catch (err) {
+      setCategoryError(err.message || 'Failed to update category');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  const handleDeleteCategory = (category) => {
+    setCategoryToDelete(category);
+    setShowDeleteCategoryModal(true);
+  };
+
+  const confirmDeleteCategory = async () => {
+    if (!categoryToDelete) return;
+    setCategoriesLoading(true);
+    try {
+      await deleteInventoryCategory(categoryToDelete.id);
+      setCategorySuccess('Category deleted successfully');
+      setShowDeleteCategoryModal(false);
+      setCategoryToDelete(null);
+      fetchCategories();
+      setTimeout(() => setCategorySuccess(''), 3000);
+    } catch (err) {
+      setCategoryError(err.message || 'Failed to delete category');
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  const handleSelectExistingProduct = (index, itemId) => {
+    setRows(prev => {
+      const next = [...prev];
+      const selectedItem = stockItems.find(item => item.id === itemId);
+
+      if (!selectedItem) {
+        next[index] = { ...next[index], sourceItemId: '' };
+        return next;
+      }
+
+      next[index] = {
+        ...next[index],
+        sourceItemId: itemId,
+        name: selectedItem.name || next[index].name,
+        category: selectedItem.category || next[index].category,
+        description: selectedItem.description || next[index].description,
+        unit: selectedItem.quantityUnit || next[index].unit || 'units',
+        costPrice:
+          selectedItem.costPrice !== undefined && selectedItem.costPrice !== null
+            ? selectedItem.costPrice
+            : next[index].costPrice,
+        sellingPrice:
+          selectedItem.price !== undefined && selectedItem.price !== null
+            ? selectedItem.price
+            : next[index].sellingPrice
+      };
+
+      return next;
+    });
+  };
+
   const validateRows = () => {
     const validRows = rows.filter(row => row.name.trim() && parseFloat(row.quantity) > 0);
     if (!validRows.length) {
@@ -65,6 +221,7 @@ const PurchaseManagement = () => {
       return null;
     }
     return validRows.map(row => ({
+      sourceItemId: row.sourceItemId || '',
       name: row.name.trim(),
       category: row.category.trim(),
       description: row.description.trim(),
@@ -329,17 +486,70 @@ const PurchaseManagement = () => {
                       <Row className="g-3">
                         <Col md={4}>
                           <Form.Group>
+                            <Form.Label>Existing Product</Form.Label>
+                            <Form.Select
+                              value={row.sourceItemId || ''}
+                              onChange={(e) => handleSelectExistingProduct(idx, e.target.value)}
+                              disabled={stockLoading || !stockItems.length}
+                            >
+                              <option value="">
+                                {stockLoading
+                                  ? 'Loading inventory...'
+                                  : 'Add as new product'}
+                              </option>
+                              {stockItems.map(item => (
+                                <option key={item.id} value={item.id}>
+                                  {item.name}
+                                </option>
+                              ))}
+                            </Form.Select>
+                            <Form.Text className="text-muted">
+                              {stockItems.length
+                                ? 'Select to auto-fill item details'
+                                : 'No products in inventory yet'}
+                            </Form.Text>
+                          </Form.Group>
+                        </Col>
+                        <Col md={4}>
+                          <Form.Group>
                             <Form.Label>Item Name*</Form.Label>
                             <Form.Control value={row.name} onChange={(e) => setRowValue(idx, 'name', e.target.value)} required />
                           </Form.Group>
                         </Col>
                         <Col md={4}>
                           <Form.Group>
-                            <Form.Label>Category</Form.Label>
-                            <Form.Control value={row.category} onChange={(e) => setRowValue(idx, 'category', e.target.value)} />
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <Form.Label className="mb-0">Category</Form.Label>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="p-0 text-decoration-none"
+                                onClick={() => setShowCategoryModal(true)}
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                <i className="bi bi-pencil-square me-1"></i>Manage Categories
+                              </Button>
+                            </div>
+                            <Form.Select 
+                              value={row.category} 
+                              onChange={(e) => setRowValue(idx, 'category', e.target.value)}
+                              disabled={categoriesLoading}
+                            >
+                              <option value="">Select a category</option>
+                              {categories.map(cat => (
+                                <option key={cat.id} value={cat.name}>
+                                  {cat.name}
+                                </option>
+                              ))}
+                            </Form.Select>
+                            <Form.Text className="text-muted">
+                              {categoriesLoading ? 'Loading categories...' : categories.length === 0 ? 'No categories yet. Click "Manage Categories" to add.' : ''}
+                            </Form.Text>
                           </Form.Group>
                         </Col>
-                        <Col md={4}>
+                      </Row>
+                      <Row className="g-3 mt-1">
+                        <Col md={12}>
                           <Form.Group>
                             <Form.Label>Description</Form.Label>
                             <Form.Control value={row.description} onChange={(e) => setRowValue(idx, 'description', e.target.value)} />
@@ -418,6 +628,152 @@ const PurchaseManagement = () => {
             {renderHistory()}
           </Card.Body>
         </Card>
+
+        {/* Category Management Modal */}
+        <Modal show={showCategoryModal} onHide={() => setShowCategoryModal(false)} size="lg">
+          <Modal.Header closeButton>
+            <Modal.Title>Manage Inventory Categories</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {categoryError && <Alert variant="danger" dismissible onClose={() => setCategoryError('')}>{categoryError}</Alert>}
+            {categorySuccess && <Alert variant="success" dismissible onClose={() => setCategorySuccess('')}>{categorySuccess}</Alert>}
+            
+            <Form onSubmit={handleAddCategory} className="mb-4">
+              <h6>Add New Category</h6>
+              <Row className="g-2">
+                <Col md={5}>
+                  <Form.Control
+                    type="text"
+                    placeholder="Category name"
+                    value={newCategory.name}
+                    onChange={(e) => setNewCategory({ ...newCategory, name: e.target.value })}
+                    required
+                  />
+                </Col>
+                <Col md={5}>
+                  <Form.Control
+                    type="text"
+                    placeholder="Description (optional)"
+                    value={newCategory.description}
+                    onChange={(e) => setNewCategory({ ...newCategory, description: e.target.value })}
+                  />
+                </Col>
+                <Col md={2}>
+                  <Button type="submit" variant="primary" disabled={categoriesLoading}>
+                    Add
+                  </Button>
+                </Col>
+              </Row>
+            </Form>
+
+            <hr />
+
+            <h6>Existing Categories</h6>
+            {categoriesLoading && !categories.length ? (
+              <div className="text-center py-3">
+                <Spinner animation="border" size="sm" />
+              </div>
+            ) : categories.length === 0 ? (
+              <p className="text-muted">No categories yet. Add one above.</p>
+            ) : (
+              <Table hover size="sm">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map(cat => (
+                    <tr key={cat.id}>
+                      <td>{cat.name}</td>
+                      <td>{cat.description || '-'}</td>
+                      <td>
+                        <Button
+                          variant="outline-primary"
+                          size="sm"
+                          className="me-2"
+                          onClick={() => handleEditCategory(cat)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline-danger"
+                          size="sm"
+                          onClick={() => handleDeleteCategory(cat)}
+                        >
+                          Delete
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowCategoryModal(false)}>
+              Close
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Edit Category Modal */}
+        <Modal show={showEditCategoryModal} onHide={() => setShowEditCategoryModal(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title>Edit Category</Modal.Title>
+          </Modal.Header>
+          <Form onSubmit={handleUpdateCategory}>
+            <Modal.Body>
+              {categoryError && <Alert variant="danger">{categoryError}</Alert>}
+              <Form.Group className="mb-3">
+                <Form.Label>Category Name</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={editCategory.name}
+                  onChange={(e) => setEditCategory({ ...editCategory, name: e.target.value })}
+                  required
+                />
+              </Form.Group>
+              <Form.Group>
+                <Form.Label>Description</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={editCategory.description}
+                  onChange={(e) => setEditCategory({ ...editCategory, description: e.target.value })}
+                />
+              </Form.Group>
+            </Modal.Body>
+            <Modal.Footer>
+              <Button variant="secondary" onClick={() => setShowEditCategoryModal(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" disabled={categoriesLoading}>
+                {categoriesLoading ? 'Updating...' : 'Update'}
+              </Button>
+            </Modal.Footer>
+          </Form>
+        </Modal>
+
+        {/* Delete Category Confirmation Modal */}
+        <Modal show={showDeleteCategoryModal} onHide={() => setShowDeleteCategoryModal(false)}>
+          <Modal.Header closeButton>
+            <Modal.Title>Delete Category</Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            <p>Are you sure you want to delete the category <strong>"{categoryToDelete?.name}"</strong>?</p>
+            <p className="text-muted small">This will not delete products in this category, but the category will be removed from the dropdown.</p>
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowDeleteCategoryModal(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmDeleteCategory} disabled={categoriesLoading}>
+              {categoriesLoading ? 'Deleting...' : 'Delete'}
+            </Button>
+          </Modal.Footer>
+        </Modal>
       </Container>
     </>
   );
