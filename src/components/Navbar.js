@@ -29,6 +29,11 @@ const MainNavbar = () => {
   const [employeesOpen, setEmployeesOpen] = useState(isEmployeesPage);
   const [employeesOpenMobile, setEmployeesOpenMobile] = useState(isEmployeesPage);
 
+  // Check if we're on a contacts page to auto-open the menu
+  const isContactsPage = location.pathname === '/customer-information' || location.pathname === '/supplier-information';
+  const [contactsOpen, setContactsOpen] = useState(isContactsPage);
+  const [contactsOpenMobile, setContactsOpenMobile] = useState(isContactsPage);
+
   // Auto-open expenses menu when on expenses pages
   useEffect(() => {
     if (isExpensesPage) {
@@ -52,6 +57,14 @@ const MainNavbar = () => {
       setEmployeesOpenMobile(true);
     }
   }, [isEmployeesPage]);
+
+  // Auto-open contacts menu when on contacts pages
+  useEffect(() => {
+    if (isContactsPage) {
+      setContactsOpen(true);
+      setContactsOpenMobile(true);
+    }
+  }, [isContactsPage]);
 
   const handleLogout = () => {
     logout()
@@ -150,6 +163,10 @@ const MainNavbar = () => {
     },
     badge: {
       background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: '#ffffff'
+    },
+    contacts: {
+      background: 'linear-gradient(135deg, #2196F3 0%, #21CBF3 100%)',
       color: '#ffffff'
     }
   };
@@ -289,17 +306,73 @@ const MainNavbar = () => {
     );
   };
 
+  const renderContactsMenu = (closeSidebar = false, isMobile = false) => {
+    const isOpen = isMobile ? contactsOpenMobile : contactsOpen;
+    const setIsOpen = isMobile ? setContactsOpenMobile : setContactsOpen;
+    const iconStyle = googleIconPalette['contacts'] || defaultGoogleIconStyle;
+    const isContactsActive = isActive('/customer-information') || isActive('/supplier-information');
+
+    return (
+      <>
+        <div 
+          className={`sidebar-link ${isContactsActive ? 'active' : ''}`}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+          onClick={() => setIsOpen(!isOpen)}
+        >
+          <span className="sidebar-icon" style={iconStyle}>
+            <span className="material-icons-outlined google-icon">contacts</span>
+          </span>
+          <span className="sidebar-text">Contacts</span>
+          <i className={`bi ${isOpen ? 'bi-chevron-down' : 'bi-chevron-right'} ms-auto`} style={{ fontSize: '0.8rem' }}></i>
+        </div>
+        <Collapse in={isOpen}>
+          <div className="sidebar-submenu">
+            {renderSubNavItem('/customer-information', 'Customer Information', closeSidebar)}
+            {renderSubNavItem('/supplier-information', 'Supplier Information', closeSidebar)}
+          </div>
+        </Collapse>
+      </>
+    );
+  };
+
   return (
     <>
       {/* Mobile Top Bar with Menu Button */}
-      <Navbar bg="primary" variant="dark" className="mb-3 d-lg-none">
-        <Container fluid>
-        <Navbar.Brand as={Link} to="/dashboard">
-          {shopData ? shopData.shopName : 'Shop Billing System'}
-        </Navbar.Brand>
-          <Button variant="outline-light" onClick={() => setShowSidebar(true)}>
-            <i className="bi bi-list"></i> <Translate textKey="menu" fallback="Menu" />
-          </Button>
+      <Navbar bg="primary" variant="dark" className="mobile-top-navbar d-lg-none">
+        <Container fluid className="mobile-top-navbar__container">
+          <Navbar.Brand 
+            as={Link} 
+            to={currentUser ? '/dashboard' : '/login'}
+            className="mobile-top-navbar__brand"
+            title={shopData ? shopData.shopName : 'Shop Billing System'}
+          >
+            <span className="mobile-top-navbar__shop">
+              {shopData ? shopData.shopName : 'Shop Billing System'}
+            </span>
+            {currentUser && (
+              <span className="mobile-top-navbar__meta">
+                {userRoleLabel}
+              </span>
+            )}
+          </Navbar.Brand>
+          <div className="mobile-top-navbar__actions">
+            {currentUser && (
+              <LanguageToggle 
+                isCompact 
+                variant="outline-light"
+                className="mobile-top-navbar__lang"
+                aria-label="Toggle language"
+              />
+            )}
+            <Button 
+              variant="light" 
+              className="mobile-top-navbar__menu" 
+              onClick={() => setShowSidebar(true)}
+              aria-label="Open menu"
+            >
+              <i className="bi bi-list"></i>
+            </Button>
+          </div>
         </Container>
       </Navbar>
 
@@ -333,7 +406,7 @@ const MainNavbar = () => {
                   renderNavItem('/receipts', 'receipt_long', <Translate textKey="receipts" />, true)
                 )}
                 {hasPermission('canViewAnalytics') && (
-                  renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Sales Analytics" />, true)
+                  renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Profit and Loss" />, true)
                 )}
                 {hasPermission('canViewStock') && (
                   <>
@@ -350,8 +423,12 @@ const MainNavbar = () => {
                 {hasPermission('canMarkAttendance') && (
                   renderAttendanceMenu(true, true)
                 )}
+                {renderContactsMenu(true, true)}
                 {!isStaff && !isGuest && (
                   renderNavItem('/settings', 'settings', <Translate textKey="settings" />, true)
+                )}
+                {!isStaff && !isGuest && (
+                  renderNavItem('/manage-passwords', 'lock_reset', 'Manage Passwords', true)
                 )}
                 {!isStaff && !isGuest && (
                   renderNavItem('/shop-profile', 'badge', 'Shop Profile', true)
@@ -405,7 +482,7 @@ const MainNavbar = () => {
                 renderNavItem('/receipts', 'receipt_long', <Translate textKey="receipts" />)
               )}
               {hasPermission('canViewAnalytics') && (
-                renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Sales Analytics" />)
+                renderNavItem('/sales-analytics', 'query_stats', <Translate textKey="salesAnalytics" fallback="Profit and Loss" />)
               )}
               {hasPermission('canViewStock') && (
                 <>
@@ -422,8 +499,12 @@ const MainNavbar = () => {
               {hasPermission('canMarkAttendance') && (
                 renderAttendanceMenu(false, false)
               )}
+              {renderContactsMenu(false, false)}
               {!isStaff && !isGuest && (
                 renderNavItem('/settings', 'settings', <Translate textKey="settings" />)
+              )}
+              {!isStaff && !isGuest && (
+                renderNavItem('/manage-passwords', 'lock_reset', 'Manage Passwords')
               )}
               {!isStaff && !isGuest && (
                 renderNavItem('/shop-profile', 'badge', 'Shop Profile')

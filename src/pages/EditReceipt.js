@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import MainNavbar from '../components/Navbar';
 import { getReceiptById, updateReceipt, formatCurrency } from '../utils/receiptUtils';
+import { formatDisplayDate } from '../utils/dateUtils';
 import { db } from '../firebase/config';
 import { collection, query, where, getDocs } from 'firebase/firestore';
 import Select from 'react-select';
@@ -271,7 +272,7 @@ const EditReceipt = () => {
                     <Form.Label>Date</Form.Label>
                     <Form.Control 
                       type="text" 
-                      value={new Date(receipt.timestamp).toLocaleString()} 
+                      value={formatDisplayDate(receipt.timestamp)} 
                       disabled 
                     />
                   </Form.Group>

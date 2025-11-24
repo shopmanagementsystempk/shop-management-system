@@ -13,7 +13,7 @@ import { formatDisplayDate } from '../utils/dateUtils';
 import MainNavbar from '../components/Navbar';
 import PageHeader from '../components/PageHeader';
 import { db } from '../firebase/config';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, addDoc } from 'firebase/firestore';
 import '../styles/select.css';
 
 const NewReceipt = () => {
@@ -23,9 +23,10 @@ const NewReceipt = () => {
   const [productCode, setProductCode] = useState('');
   const [customer, setCustomer] = useState('Walk-in Customer');
   const [autoPrint, setAutoPrint] = useState(true);
-  const [discount, setDiscount] = useState('0');
-  const [tax, setTax] = useState('0');
-  const [enterAmount, setEnterAmount] = useState('0');
+  const [discount, setDiscount] = useState('');
+  const [tax, setTax] = useState('');
+  const [enterAmount, setEnterAmount] = useState('');
+  const [loanAmount, setLoanAmount] = useState('');
   const [transactionId] = useState(generateTransactionId());
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -36,6 +37,8 @@ const NewReceipt = () => {
   const [employees, setEmployees] = useState([]);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [employeesLoaded, setEmployeesLoaded] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  const [customersLoaded, setCustomersLoaded] = useState(false);
   const navigate = useNavigate();
   const pdfRef = useRef();
 
@@ -78,6 +81,28 @@ const NewReceipt = () => {
       fetchEmployees();
     }
   }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser || activeShopId) {
+      const fetchCustomers = async () => {
+        try {
+          const customersRef = collection(db, 'customers');
+          const customersQuery = query(
+            customersRef,
+            where('shopId', '==', activeShopId || currentUser.uid)
+          );
+          const snapshot = await getDocs(customersQuery);
+          const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          list.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+          setCustomers(list);
+          setCustomersLoaded(true);
+        } catch (error) {
+          setCustomersLoaded(true);
+        }
+      };
+      fetchCustomers();
+    }
+  }, [currentUser, activeShopId]);
 
   // Cleanup: Remove any print iframes when component unmounts
   useEffect(() => {
@@ -219,20 +244,28 @@ const NewReceipt = () => {
     const totalAmount = items.reduce((sum, item) => 
       sum + (parseFloat(item.salePrice || 0) * parseFloat(item.quantity || 1)), 0);
     const discountAmount = parseFloat(discount || 0);
-    const taxAmount = parseFloat(tax || 0);
-    const payable = totalAmount - discountAmount + taxAmount;
+    const subtotalAfterDiscount = totalAmount - discountAmount;
+    // Calculate tax as percentage of subtotal after discount
+    const taxPercentage = parseFloat(tax || 0);
+    const taxAmount = (taxPercentage / 100) * subtotalAfterDiscount;
+    const payable = subtotalAfterDiscount + taxAmount;
     const receivedAmount = parseFloat(enterAmount || 0);
-    const balance = receivedAmount - payable;
+    const loanAmt = Math.max(0, Math.min(parseFloat(loanAmount || 0) || 0, payable));
+    const effectivePayable = Math.max(0, payable - loanAmt);
+    const balance = receivedAmount - effectivePayable;
     
     return {
       totalQuantities: totalQuantities.toFixed(2),
       totalAmount: totalAmount.toFixed(2),
+      taxAmount: taxAmount.toFixed(2),
       payable: payable.toFixed(2),
       receivedAmount: receivedAmount.toFixed(2),
       balance: balance.toFixed(2),
-      return: balance < 0 ? Math.abs(balance).toFixed(2) : '0.00'
+      return: balance < 0 ? Math.abs(balance).toFixed(2) : '0.00',
+      loanAmount: loanAmt.toFixed(2),
+      effectivePayable: effectivePayable.toFixed(2)
     };
-  }, [items, discount, tax, enterAmount]);
+  }, [items, discount, tax, enterAmount, loanAmount]);
 
   // Handle item changes
   const handleItemChange = (index, field, value) => {
@@ -303,9 +336,9 @@ const NewReceipt = () => {
     setSelectedProduct('');
     setProductCode('');
     setCustomer('Walk-in Customer');
-    setDiscount('0');
-    setTax('0');
-    setEnterAmount('0');
+    setDiscount('');
+    setTax('');
+    setEnterAmount('');
     setSelectedEmployee(null);
     setError('');
     setSuccess('');
@@ -426,11 +459,12 @@ const NewReceipt = () => {
                 const rate = Math.round(parseFloat(item.salePrice || 0));
                 const amount = Math.round(qty * rate);
                 const name = (item.name || '').replace(/\n/g, '\n');
+                const unit = item.quantityUnit && item.quantityUnit.toLowerCase() !== 'units' ? item.quantityUnit.toUpperCase() : '';
                 return `
                   <tr>
                     <td class="c">${idx + 1}</td>
                     <td class="wrap">${name}</td>
-                    <td class="c">${qty}</td>
+                    <td class="c">${qty} ${unit}</td>
                     <td class="r">${rate}</td>
                     <td class="r">${amount}</td>
                   </tr>
@@ -439,10 +473,12 @@ const NewReceipt = () => {
             </tbody>
           </table>
 
-          <div class="totals">
+            <div class="totals">
             <div class="line"><span>Total</span><span>${parseFloat(totals.totalQuantities).toFixed(2)}</span></div>
             ${parseFloat(discount) > 0 ? `<div class="line"><span>Discount</span><span>${Math.round(parseFloat(discount))}</span></div>` : ''}
+            ${parseFloat(totals.taxAmount) > 0 ? `<div class="line"><span>Tax (${tax || 0}%)</span><span>${Math.round(parseFloat(totals.taxAmount))}</span></div>` : ''}
             <div class="line"><span>Net Total</span><span>${Math.round(parseFloat(totals.payable))}</span></div>
+            ${parseFloat(totals.loanAmount) > 0 ? `<div class="line"><span>Loan</span><span>${Math.round(parseFloat(totals.loanAmount))}</span></div>` : ''}
           </div>
 
           <div class="net">${Math.round(parseFloat(totals.payable))}</div>
@@ -467,7 +503,7 @@ const NewReceipt = () => {
         }
       }, 1000);
     }, 250);
-  }, [discount, items, shopData, totals, transactionId]);
+  }, [discount, items, shopData, tax, totals, transactionId]);
 
   // Handle form submission
   const handleSubmit = useCallback(async (e) => {
@@ -510,12 +546,30 @@ const NewReceipt = () => {
         discount: parseFloat(discount) || 0,
         paymentMethod: 'Cash',
         cashGiven: parseFloat(enterAmount) || 0,
-        change: parseFloat(enterAmount) - parseFloat(totals.payable) || 0,
+        change: (parseFloat(enterAmount) || 0) - Math.max(parseFloat(totals.payable) - (parseFloat(loanAmount || 0) || 0), 0),
         employeeName: selectedEmployee ? selectedEmployee.name : null,
-        employeeId: selectedEmployee ? selectedEmployee.id : null
+        employeeId: selectedEmployee ? selectedEmployee.id : null,
+        customerName: customer,
+        isLoan: (parseFloat(loanAmount || 0) || 0) > 0,
+        loanAmount: Math.max(parseFloat(loanAmount || 0) || 0, 0)
       };
       
       const receiptId = await saveReceipt(receiptData);
+      if ((parseFloat(loanAmount || 0) || 0) > 0 && customer && customer !== 'Walk-in Customer') {
+        try {
+          await addDoc(collection(db, 'customerLoans'), {
+            shopId: activeShopId,
+            customerName: customer,
+            receiptId,
+            transactionId,
+            amount: Math.max(parseFloat(loanAmount || 0) || 0, 0),
+            timestamp: new Date().toISOString(),
+            status: 'outstanding'
+          });
+        } catch (e) {
+          console.error('Failed to record customer loan', e);
+        }
+      }
       
       // Update stock
       await updateStockQuantity(activeShopId, receiptItems.map(item => ({
@@ -589,6 +643,10 @@ const NewReceipt = () => {
   // Get employee options for select
   const employeeOptions = employeesLoaded ? 
     employees.map(emp => ({ value: emp.id, label: emp.name })) : [];
+
+  const customerOptions = customersLoaded 
+    ? [{ value: 'Walk-in Customer', label: 'Walk-in Customer' }, ...customers.map(c => ({ value: c.name, label: c.name }))]
+    : [{ value: 'Walk-in Customer', label: 'Walk-in Customer' }];
 
 
   return (
@@ -675,11 +733,18 @@ const NewReceipt = () => {
                   <Col md={6}>
                     <Form.Group>
                       <Form.Label>Customer Name</Form.Label>
-                      <Form.Control
-                        type="text"
-                        value={customer}
-                        onChange={(e) => setCustomer(e.target.value)}
+                      <Select
+                        value={customerOptions.find(opt => opt.value === customer) || null}
+                        onChange={(option) => setCustomer(option ? option.value : 'Walk-in Customer')}
+                        options={customerOptions}
                         placeholder="Walk-in Customer"
+                        isClearable
+                        className="basic-single"
+                        classNamePrefix="select"
+                        menuPortalTarget={document.body}
+                        styles={{
+                          menuPortal: (base) => ({ ...base, zIndex: 9999 })
+                        }}
                       />
                     </Form.Group>
                   </Col>
@@ -808,6 +873,21 @@ const NewReceipt = () => {
                   Payment Summary
                 </h5>
 
+                <div className="mb-3">
+                  <Form.Group>
+                    <Form.Label>Loan Amount (RS)</Form.Label>
+                    <Form.Control
+                      type="number"
+                      value={loanAmount}
+                      onChange={(e) => setLoanAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                    />
+                    <Form.Text className="text-muted">Optional. If provided, cash change is computed on payable minus loan.</Form.Text>
+                  </Form.Group>
+                </div>
+
                 <div className="mb-4">
                   <Form.Group className="mb-3">
                     <Form.Label>Discount (RS)</Form.Label>
@@ -821,15 +901,19 @@ const NewReceipt = () => {
                     />
                   </Form.Group>
                   <Form.Group className="mb-3">
-                    <Form.Label>Tax (RS)</Form.Label>
+                    <Form.Label>Tax (%)</Form.Label>
                     <Form.Control
                       type="number"
                       value={tax}
                       onChange={(e) => setTax(e.target.value)}
-                      placeholder="0.00"
+                      placeholder="0"
                       min="0"
+                      max="100"
                       step="0.01"
                     />
+                    <Form.Text className="text-muted">
+                      Tax percentage will be calculated on the subtotal (after discount)
+                    </Form.Text>
                   </Form.Group>
                 </div>
 
@@ -843,8 +927,8 @@ const NewReceipt = () => {
                     <span className="text-danger">-{formatCurrency(discount)}</span>
                   </div>
                   <div className="d-flex justify-content-between mb-2">
-                    <span className="text-muted">Tax:</span>
-                    <span>+{formatCurrency(tax)}</span>
+                    <span className="text-muted">Tax ({tax || 0}%):</span>
+                    <span>+{formatCurrency(totals.taxAmount)}</span>
                   </div>
                   <div className="d-flex justify-content-between mb-3 pt-2 border-top">
                     <span className="fw-bold">Total Payable:</span>
@@ -876,6 +960,14 @@ const NewReceipt = () => {
                       {formatCurrency(totals.balance)}
                     </strong>
                   </div>
+                  {parseFloat(totals.loanAmount) > 0 && (
+                    <div className="d-flex justify-content-between mt-2">
+                      <span className="fw-bold">Loan:</span>
+                      <strong className="text-danger">
+                        {formatCurrency(totals.loanAmount)}
+                      </strong>
+                    </div>
+                  )}
                 </div>
 
                 <div className="d-grid gap-2">

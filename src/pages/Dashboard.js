@@ -546,7 +546,7 @@ const Dashboard = () => {
                   </p>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/receipts')}
@@ -602,7 +602,7 @@ const Dashboard = () => {
                   )}
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/employees')}
@@ -642,7 +642,7 @@ const Dashboard = () => {
                   </h6>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/salary-management')}
@@ -682,7 +682,7 @@ const Dashboard = () => {
                   </h6>
                 </div>
                 <div className="mt-auto">
-                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap">
+                  <Stack direction="horizontal" gap={2} className="d-flex flex-wrap stack-on-mobile">
                     <Button 
                       variant="primary" 
                       onClick={() => navigate('/expenses')}
@@ -791,6 +791,21 @@ const Dashboard = () => {
           .table-responsive.small-table td, 
           .table-responsive.small-table th {
             padding: 0.3rem;
+          }
+          .table-responsive.small-table .text-truncate {
+            max-width: 60px;
+          }
+        }
+        @media (max-width: 400px) {
+          .table-responsive.small-table {
+            font-size: 0.8rem;
+          }
+          .table-responsive.small-table td, 
+          .table-responsive.small-table th {
+            padding: 0.25rem;
+          }
+          .table-responsive.small-table .text-truncate {
+            max-width: 50px;
           }
         }
         .summary-box { height: 180px; display: flex; flex-direction: column; justify-content: center; }
