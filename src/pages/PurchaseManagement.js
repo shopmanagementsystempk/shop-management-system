@@ -19,7 +19,8 @@ const defaultRow = {
   unit: 'units',
   costPrice: '',
   sellingPrice: '',
-  expiryDate: ''
+  expiryDate: '',
+  barcode: ''
 };
 const createEmptyRow = () => ({ ...defaultRow });
 
@@ -163,6 +164,12 @@ const PurchaseManagement = () => {
     });
   };
 
+  // Generate random 8-digit barcode for a specific row
+  const generateBarcodeForRow = (index) => {
+    const randomBarcode = Math.floor(10000000 + Math.random() * 90000000).toString();
+    setRowValue(index, 'barcode', randomBarcode);
+  };
+
   const addRow = () => setRows(prev => [...prev, createEmptyRow()]);
   const removeRow = (index) => setRows(prev => prev.filter((_, idx) => idx !== index));
 
@@ -290,7 +297,7 @@ const PurchaseManagement = () => {
       const selectedItem = stockItems.find(item => item.id === itemId);
 
       if (!selectedItem) {
-        next[index] = { ...next[index], sourceItemId: '' };
+        next[index] = createEmptyRow();
         return next;
       }
 
@@ -308,7 +315,8 @@ const PurchaseManagement = () => {
         sellingPrice:
           selectedItem.price !== undefined && selectedItem.price !== null
             ? selectedItem.price
-            : next[index].sellingPrice
+            : next[index].sellingPrice,
+        barcode: selectedItem.barcode || ''
       };
 
       return next;
@@ -331,6 +339,7 @@ const PurchaseManagement = () => {
       costPrice: parseFloat(row.costPrice || 0),
       sellingPrice: row.sellingPrice ? parseFloat(row.sellingPrice) : null,
       expiryDate: row.expiryDate || null,
+      sku: (row.barcode || '').trim()
     }));
   };
 
@@ -660,6 +669,26 @@ const PurchaseManagement = () => {
                             <Form.Text className="text-muted">
                               {categoriesLoading ? 'Loading categories...' : categories.length === 0 ? 'No categories yet. Click "Manage Categories" to add.' : ''}
                             </Form.Text>
+                          </Form.Group>
+                        </Col>
+                      </Row>
+                      <Row className="g-3 mt-1">
+                        <Col md={4}>
+                          <Form.Group>
+                            <div className="d-flex justify-content-between align-items-center mb-1">
+                              <Form.Label className="mb-0">Barcode</Form.Label>
+                              <Button
+                                variant="link"
+                                size="sm"
+                                className="p-0 text-decoration-none"
+                                onClick={() => generateBarcodeForRow(idx)}
+                                style={{ fontSize: '0.75rem' }}
+                              >
+                                <i className="bi bi-upc-scan me-1"></i>Generate
+                              </Button>
+                            </div>
+                            <Form.Control value={row.barcode || ''} onChange={(e) => setRowValue(idx, 'barcode', e.target.value)} placeholder="Optional" />
+                            <Form.Text className="text-muted">Used for barcode scanning</Form.Text>
                           </Form.Group>
                         </Col>
                       </Row>
